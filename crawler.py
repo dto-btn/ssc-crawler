@@ -9,6 +9,8 @@ import zlib
 import urllib.parse
 import io
 from lxml import etree
+import asyncio
+from pyppeteer import launch
 
 urllib3.disable_warnings() #TODO: disabling since this is intranet but we should properly load the site cert or itermediate
 logging.basicConfig(filename='crawler.log', encoding='utf-8', level=logging.DEBUG)
@@ -47,8 +49,8 @@ def _wafwaf(session: requests.Session):
                 post = r.group(1)
                 post = post.replace('\\u0026', '&')
                 print(post)
-                r = session.post("https://login.microsoftonline.com" + post)
-                print(r.text)
+                r = session.post("https://login.microsoftonline.com" + post, verify=False, headers=headers)
+                print(r)
                 break
         if post:
             post = post.replace('\\u0026', '&')
@@ -152,6 +154,30 @@ def _crawl(baseUrl: str, uri: str):
                     else:
                         logging.debug("IGNORING: " + href)
 
-_wafwaf(_session)
+#_wafwaf(_session)
 # crawl site(s) and retreive a list of URLs and their content
 #_crawl("https://plus.ssc-spc.gc.ca", "/en")
+
+async def get_html():
+    browser = await launch(headless=True, executablePath="/usr/bin/google-chrome-stable")
+    page = await browser.newPage()
+    await page.setJavaScriptEnabled(True)
+    await page.goto("https://plus.ssc-spc.gc.ca/en")
+    #await page.waitForSelector("div.content", visible=True)
+    await page.waitForNavigation({"waitUntil":"networkidle2"})
+    print("network is idle ok ?")
+    res = await page.evaluate(pageFunction='document.querySelector(".button_primary").click();', force_expr=True)
+    #await page.waitForNavigation()
+    print(res)
+    html = await page.content() # SAML Post ...
+
+    await browser.close()
+    return html
+
+html = asyncio.get_event_loop().run_until_complete(get_html())
+soup = BeautifulSoup(html, "html.parser")
+
+for input in soup.findAll("input"):
+    print(input)
+
+#print(soup)
