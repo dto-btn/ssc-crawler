@@ -11,9 +11,12 @@ import io
 from lxml import etree
 import asyncio
 from pyppeteer import launch
+import undetected_chromedriver as uc
+from selenium.webdriver.remote.webdriver import By
+import time
 
 urllib3.disable_warnings() #TODO: disabling since this is intranet but we should properly load the site cert or itermediate
-logging.basicConfig(filename='crawler.log', encoding='utf-8', level=logging.DEBUG)
+logging.basicConfig(filename='crawler.log', encoding='utf-8', level=logging.INFO)
 
 _session = requests.Session()
 _pages = dict()
@@ -80,13 +83,13 @@ def _save_page(name: str, response: requests.Response):
         with open(file=_base + name, mode="wb") as file:
             file.write(response.content)
     else:
-        with open(file=_base + name + ".html", mode="w") as file:
+        #with open(file=_base + name + ".html", mode="w") as file:
+        #    file.write(response.content)
+        with open(file=_base + name + ".txt", mode="w") as file:
             soup = BeautifulSoup(response.content, 'html.parser', from_encoding="UTF-8")
-            div = soup.find_all("div", class_="content")
-            if div:
-                file.write(div)
-            else:
-                file.write(response.text)
+            for div in soup.find_all("div.content"):
+                file.write(div.text)
+        
         
 
 """
@@ -133,9 +136,10 @@ Recursively crawl a url and it's given <a> tags in the page.
 def _crawl(baseUrl: str, uri: str):
     logging.info("Crawling in ... " + baseUrl + uri)
     r = _session.get(baseUrl + uri, verify=False)
+    _pages[baseUrl + uri] = None #mark this as visited even if the following requests fails
+    logging.info("Scanned pages count is: " + str(len(_pages)))
 
-    if r.status_code == 200:
-        _pages[baseUrl + uri] = None
+    if r.status_code == 200:    
         # write to disk ...
         _save_page(uri, r)
         # if not a pdf then go a head and use bs4 to parse the content of it for links ...
@@ -145,7 +149,7 @@ def _crawl(baseUrl: str, uri: str):
             # find links in page and add them to the dictonary
             for link in soup.find_all('a'):
                 href = str(link.get('href'))
-                ok = _process(href)
+                ok = _process(href) # are we allowed to crawl this space?
                 if href and ok:
                     if baseUrl + href not in _pages:
                         # link is valid and has not been processed before, so process it ..
@@ -156,7 +160,7 @@ def _crawl(baseUrl: str, uri: str):
 
 #_wafwaf(_session)
 # crawl site(s) and retreive a list of URLs and their content
-#_crawl("https://plus.ssc-spc.gc.ca", "/en")
+_crawl("https://plus.ssc-spc.gc.ca", "/en")
 
 async def get_html():
     browser = await launch(headless=True, executablePath="/usr/bin/google-chrome-stable")
@@ -166,7 +170,11 @@ async def get_html():
     #await page.waitForSelector("div.content", visible=True)
     await page.waitForNavigation({"waitUntil":"networkidle2"})
     print("network is idle ok ?")
-    res = await page.evaluate(pageFunction='document.querySelector(".button_primary").click();', force_expr=True)
+    #res = await page.evaluate(pageFunction='document.querySelector(".button_primary").click();', force_expr=True)
+    #<form action="https://login.microsoftonline.com/d05bc194-94bf-4ad6-ae2e-1db0f2e38f5e/login" autocomplete="off" class="provide-min-height" 
+    # data-bind="autoSubmit: forceSubmit, attr: { action: postUrl }, ariaHidden: !!activeDialog(),
+    #  css: { 'provide-min-height': svr.fUseMinHeight }" id="i0281" method="post" name="f1" novalidate="novalidate" spellcheck="false" target="_top">
+    res = await page.evaluate(pageFunction='document.querySelector("form[name=\'f1\']").submit();', force_expr=True)
     #await page.waitForNavigation()
     print(res)
     html = await page.content() # SAML Post ...
@@ -174,10 +182,29 @@ async def get_html():
     await browser.close()
     return html
 
-html = asyncio.get_event_loop().run_until_complete(get_html())
-soup = BeautifulSoup(html, "html.parser")
+#html = asyncio.get_event_loop().run_until_complete(get_html())
+#soup = BeautifulSoup(html, "html.parser")
 
-for input in soup.findAll("input"):
-    print(input)
+#for input in soup.findAll("input"):
+#    print(input)
+
+print("#################################\n#############################################\n###########################################\n")
+
+#for input in soup.findAll("form"):
+#    print(input)
+
+#driver = uc.Chrome()
+#driver._web_element_cls = uc.UCWebElement
+#driver.get("https://plus.ssc-spc.gc.ca/en")
+#driver.
+#print(driver.current_url)
+
+#time.sleep(5)
+
+#print(driver.current_url)
+#results_container = driver.find_element(By.TAG_NAME, "section")
+#print(results_container)
+#for item in results_container:
+#    print(item)
 
 #print(soup)
