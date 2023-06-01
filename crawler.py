@@ -8,12 +8,7 @@ import base64
 import zlib
 import urllib.parse
 import io
-from lxml import etree
-import asyncio
-from pyppeteer import launch
-import undetected_chromedriver as uc
-from selenium.webdriver.remote.webdriver import By
-import time
+from urllib.parse import urlparse
 
 urllib3.disable_warnings() #TODO: disabling since this is intranet but we should properly load the site cert or itermediate
 logging.basicConfig(filename='crawler.log', encoding='utf-8', level=logging.INFO)
@@ -73,6 +68,8 @@ def _wafwaf(session: requests.Session):
 
 
 def _save_page(name: str, response: requests.Response):
+    name = urlparse(name).path
+    name = name.strip("/")
     
     isExist = os.path.exists(_base + os.path.dirname(name))
     if not isExist:
@@ -83,12 +80,13 @@ def _save_page(name: str, response: requests.Response):
         with open(file=_base + name, mode="wb") as file:
             file.write(response.content)
     else:
-        #with open(file=_base + name + ".html", mode="w") as file:
-        #    file.write(response.content)
-        with open(file=_base + name + ".txt", mode="w") as file:
-            soup = BeautifulSoup(response.content, 'html.parser', from_encoding="UTF-8")
-            for div in soup.find_all("div.content"):
-                file.write(div.text)
+        logging.info("writting file .." + _base + name.replace(".aspx", ".html"))
+        with open(file=_base + name.replace(".aspx", ".html"), mode="wb") as file:
+            file.write(response.content)
+        # with open(file=_base + name + ".txt", mode="w") as file:
+        #     soup = BeautifulSoup(response.content, 'html.parser', from_encoding="UTF-8")
+        #     for div in soup.find_all("div.content"):
+        #         file.write(div.text)
         
         
 
@@ -123,8 +121,8 @@ logging.debug("robots.txt contents:" + str(robots))
 
 """
 def _process(uri: str) -> bool:
-    dnp = ["/index.php/", "/admin/", "/user/", "/search", "/comment/", "/node/", "/filter/"]
-    if not uri.startswith('/'):
+    dnp = ["/index.php/", "/admin/", "/user/", "/search", "/comment/", "/node/", "/filter/", "download"]
+    if uri.startswith("http") or uri.startswith("www") or uri.startswith("#"):
         return False
     if any(s in uri for s in dnp):
             return False
@@ -133,78 +131,37 @@ def _process(uri: str) -> bool:
 """
 Recursively crawl a url and it's given <a> tags in the page.
 """
-def _crawl(baseUrl: str, uri: str):
-    logging.info("Crawling in ... " + baseUrl + uri)
-    r = _session.get(baseUrl + uri, verify=False)
-    _pages[baseUrl + uri] = None #mark this as visited even if the following requests fails
+def _crawl(url: str):
+    logging.info("Crawling in ... " + url)
+    r = _session.get(url, verify=False)
+    _pages[url] = None #mark this as visited even if the following requests fails
     logging.info("Scanned pages count is: " + str(len(_pages)))
+
+    logging.info("resp conde: " + str(r.status_code))
 
     if r.status_code == 200:    
         # write to disk ...
-        _save_page(uri, r)
+        _save_page(url, r)
         # if not a pdf then go a head and use bs4 to parse the content of it for links ...
-        if not uri.endswith(".pdf"):
+        if not url.endswith(".pdf"):
+            logging.info("parsing links ...")
             soup = BeautifulSoup(r.content, 'html.parser', from_encoding="UTF-8")
-
-            # find links in page and add them to the dictonary
-            for link in soup.find_all('a'):
-                href = str(link.get('href'))
-                ok = _process(href) # are we allowed to crawl this space?
-                if href and ok:
-                    if baseUrl + href not in _pages:
+            for link in soup.find_all('a'): 
+                uri = str(link.get('href'))
+                if _process(uri): # are we allowed to crawl this space?
+                    # fix relative url
+                    if not uri.startswith("/"):
+                        uri = "/" + uri
+                    base = url.rsplit('/', 1)[0]
+                    print(base + uri)
+                    
+                    if  base + uri not in _pages:
                         # link is valid and has not been processed before, so process it ..
-                        logging.info("PROCESSING: " + href)
-                        _crawl(baseUrl, href)
+                        logging.info("PROCESSING: " + base + uri)
+                        _crawl(base + uri)
                     else:
-                        logging.debug("IGNORING: " + href)
+                        logging.debug("IGNORING: " + base + uri)
 
 #_wafwaf(_session)
 # crawl site(s) and retreive a list of URLs and their content
-_crawl("https://plus.ssc-spc.gc.ca", "/en")
-
-async def get_html():
-    browser = await launch(headless=True, executablePath="/usr/bin/google-chrome-stable")
-    page = await browser.newPage()
-    await page.setJavaScriptEnabled(True)
-    await page.goto("https://plus.ssc-spc.gc.ca/en")
-    #await page.waitForSelector("div.content", visible=True)
-    await page.waitForNavigation({"waitUntil":"networkidle2"})
-    print("network is idle ok ?")
-    #res = await page.evaluate(pageFunction='document.querySelector(".button_primary").click();', force_expr=True)
-    #<form action="https://login.microsoftonline.com/d05bc194-94bf-4ad6-ae2e-1db0f2e38f5e/login" autocomplete="off" class="provide-min-height" 
-    # data-bind="autoSubmit: forceSubmit, attr: { action: postUrl }, ariaHidden: !!activeDialog(),
-    #  css: { 'provide-min-height': svr.fUseMinHeight }" id="i0281" method="post" name="f1" novalidate="novalidate" spellcheck="false" target="_top">
-    res = await page.evaluate(pageFunction='document.querySelector("form[name=\'f1\']").submit();', force_expr=True)
-    #await page.waitForNavigation()
-    print(res)
-    html = await page.content() # SAML Post ...
-
-    await browser.close()
-    return html
-
-#html = asyncio.get_event_loop().run_until_complete(get_html())
-#soup = BeautifulSoup(html, "html.parser")
-
-#for input in soup.findAll("input"):
-#    print(input)
-
-print("#################################\n#############################################\n###########################################\n")
-
-#for input in soup.findAll("form"):
-#    print(input)
-
-#driver = uc.Chrome()
-#driver._web_element_cls = uc.UCWebElement
-#driver.get("https://plus.ssc-spc.gc.ca/en")
-#driver.
-#print(driver.current_url)
-
-#time.sleep(5)
-
-#print(driver.current_url)
-#results_container = driver.find_element(By.TAG_NAME, "section")
-#print(results_container)
-#for item in results_container:
-#    print(item)
-
-#print(soup)
+_crawl("https://www.tbs-sct.canada.ca/agreements-conventions/index-eng.aspx")
