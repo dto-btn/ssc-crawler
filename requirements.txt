@@ -1,2 +1,7 @@
 bs4
-scrapy
+lxml
+requests
+pyppeteer
+asyncio
+undetected_chromedriver
+selenium
