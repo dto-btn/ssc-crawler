@@ -3,7 +3,14 @@ import requests
 import urllib3
 import logging
 import os
+from dotenv import load_dotenv
 from urllib.parse import urlparse, urlsplit, urlunparse
+import msal
+
+load_dotenv()
+
+username = os.environ["USERNAME"]
+password = os.environ["PASSWORD"]
 
 urllib3.disable_warnings() #TODO: disabling since this is intranet but we should properly load the site cert or itermediate
 logging.basicConfig(filename='crawler.log', encoding='utf-8', level=logging.DEBUG)
@@ -13,9 +20,7 @@ _visited = set()
 _base = "dump/"
 
 _blacklist = ["download", "pdf", "docx", "pdf", "canadasite"]
-_whitelist = ["/agreements-conventions"]
-
-_defaultsite = "https://www.tbs-sct.canada.ca"
+_whitelist = ["/agreements-conventions", "/sites/VF-LFDF"]
 
 def _save_page(name: str, response: requests.Response):
     uri = urlparse(name).path
@@ -39,7 +44,6 @@ def _save_page(name: str, response: requests.Response):
         
 
 def _process(uri: str) -> bool:
-    logging.debug(f"shall we process this URI? --> {uri}")
     # ignore anchors ..
     if uri.startswith("#"):
          return False
@@ -49,6 +53,7 @@ def _process(uri: str) -> bool:
     
     if any(s in uri for s in _whitelist):
             return True
+    
     return False
 
 """
@@ -64,10 +69,12 @@ def _crawl(url: str):
         uri += "?" + s_url.query
     
     basepath = url.rsplit("/", 1)[0]
-
-    if _process(uri):
+    process = _process(uri)
+    logging.debug(f"shall we process this URI? --> {uri} --> {process}")
+    if process:
         logging.info(f"Crawling in: {url} and page scanned count = {len(_visited)}") 
-        r = _session.get(url, verify=False)
+        r = _session.get(url, verify=False,allow_redirects=True)
+        print(r.url)
         if r.status_code == 200:
             _save_page(url, r)
             soup = BeautifulSoup(r.content, 'html.parser', from_encoding="UTF-8")
@@ -86,6 +93,19 @@ def _crawl(url: str):
     else:
          logging.debug(f"ignoring: {url} and page scanned count = {len(_visited)}") 
 
-# crawl site(s) and retreive a list of URLs and their content
+# tbs agreements ...
+_defaultsite = "https://www.tbs-sct.canada.ca"
 _crawl("https://www.tbs-sct.canada.ca/agreements-conventions/list-eng.aspx")
 _crawl("https://www.tbs-sct.canada.ca/agreements-conventions/list-fra.aspx")
+
+# Vendor Tool (sharepoint)
+#cache = msal.SerializableTokenCache()
+#_session.["token_cache"] = cache.serialize()
+#msal_app = msal.PublicClientApplication(client_id=None, authority="https://login.microsoftonline.com/d05bc194-94bf-4ad6-ae2e-1db0f2e38f5e/")
+#scopes = ["https://163gc.sharepoint.com/.default"]
+#r = msal_app.acquire_token_interactive()
+
+
+#_defaultsite = "https://163gc.sharepoint.com"
+#_crawl("https://163gc.sharepoint.com/sites/VF-LFDF/SitePages/Home.aspx")
+#_crawl("https://163gc.sharepoint.com/sites/VF-LFDF/SitePages/fr/Home.aspx")

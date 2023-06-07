@@ -5,3 +5,5 @@ pyppeteer
 asyncio
 undetected_chromedriver
 selenium
+python-dotenv
+msal
